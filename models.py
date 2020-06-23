@@ -89,8 +89,8 @@ class Predictor(models.Model):
 
     material = models.ForeignKey(Material, on_delete=models.CASCADE)
     model_dir = models.CharField(name='model_dir', default='polls/trained/?.h5', max_length=100)
-    I_scale = models.CharField(name='Input scale model', default='polls/trained/I_scaler.gz', max_length=100)
-    O_scale = models.CharField(name='output scale model', default='polls/trained/O_scaler.gz', max_length=100)
+    i_scale = models.CharField(name='i_scale', default='polls/trained/I_scaler.gz', max_length=100)
+    o_scale = models.CharField(name='o_scale', default='polls/trained/O_scaler.gz', max_length=100)
     time_frame = models.CharField(name='time_frame', default='1H', max_length=20)
     last_calc = models.DateTimeField(name='last_calc', default=timezone.now)
     input_size = models.IntegerField(name='input_size', default=24)
@@ -111,19 +111,19 @@ class Predictor(models.Model):
             df = self.material.make_ohl_cv(start_time=timezone.now() - timezone.timedelta(days=size), time_step='1D')
         print(df)
         net = load_model(self.model_dir)
-        I_scale = joblib.load(self.I_scale)
-        O_scale = joblib.load(self.O_scale)
+        i_scale = joblib.load(self.i_scale)
+        o_scale = joblib.load(self.o_scale)
 
         ind = df.index[df.DateTime == self.last_calc]
-        Close = df.columns.get_loc('Close')
+        close = df.columns.get_loc('Close')
 
-        input = df.iloc[ind - self.input_size + 1: ind + 1, Close]
-        scaled_input = I_scale.transform(input)
+        the_input = df.iloc[ind - self.input_size + 1: ind + 1, close]
+        scaled_input = i_scale.transform(the_input)
 
-        pred = net.predict(scaled_input)
-        scaled_pred = O_scale.inverse_transform(pred)
+        prediction = net.predict(scaled_input)
+        scaled_prediction = o_scale.inverse_transform(prediction)
 
-        return scaled_pred
+        return scaled_prediction
 
 
 
