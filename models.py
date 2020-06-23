@@ -4,9 +4,6 @@ from django.utils import timezone
 from django.http import request as django_req
 from bs4 import BeautifulSoup
 from requests import Session
-import trendln
-import matplotlib.pyplot as plt
-import yfinance as yf  # requires yfinance - pip install yfinance
 from requests.exceptions import ConnectionError, Timeout, TooManyRedirects
 # Create your models here.
 
@@ -23,7 +20,6 @@ class User(models.Model):
 
 
 class Material(models.Model):
-    print('this is mahsa')
     name = models.CharField(name='name', max_length=100, default='')
     persian_name = models.CharField(name='persian_name', max_length=100, default='')
     price = models.FloatField(name="price")
@@ -66,9 +62,9 @@ class Material(models.Model):
         df = df_new.set_index(pd.Index([i + 1 for i in range(len(df))]))
         df = df[['DateTime', 'Open', 'High', 'Low', 'Close', 'Volume']]
         df["DateTime"] = df["DateTime"].dt.strftime("%Y-%m-%d %H:%M:%S")
-        # print(df)
         return df
 
+    """
     def give_support_resistance(self):
         df = self.make_ohl_cv(start_time=timezone.now()-timezone.timedelta(hours=8), time_step='1Min')
         print(df)
@@ -84,7 +80,7 @@ class Material(models.Model):
         # requires matplotlib - pip install matplotlib
         plt.savefig('suppres.svg', format='svg')
         plt.show()
-
+    """
 
 class Predictor(models.Model):
     material = models.ForeignKey(Material, on_delete=models.CASCADE)
