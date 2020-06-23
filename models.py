@@ -21,6 +21,7 @@ class User(models.Model):
     def __str__(self):
         return self.name
 
+print('hi')
 
 class Material(models.Model):
     name = models.CharField(name='name', max_length=100, default='')
