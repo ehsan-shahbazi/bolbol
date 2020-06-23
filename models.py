@@ -5,6 +5,8 @@ from django.http import request as django_req
 from bs4 import BeautifulSoup
 from requests import Session
 from requests.exceptions import ConnectionError, Timeout, TooManyRedirects
+from tensorflow.keras.models import load_model
+import joblib
 # Create your models here.
 
 
@@ -85,6 +87,8 @@ class Material(models.Model):
 class Predictor(models.Model):
     material = models.ForeignKey(Material, on_delete=models.CASCADE)
     model_dir = models.CharField(name='model_dir', default='polls/trained/?.h5', max_length=100)
+    I_scale = models.CharField(name='Input scale model', default='polls/trained/I_scaler.gz', max_length=100)
+    O_scale = models.CharField(name='output scale model', default='polls/trained/O_scaler.gz', max_length=100)
     time_frame = models.CharField(name='time_frame', default='1H', max_length=20)
     last_calc = models.DateTimeField(name='last_calc', default=timezone.now)
     input_size = models.IntegerField(name='input_size', default=24)
@@ -103,6 +107,21 @@ class Predictor(models.Model):
         elif self.time_frame == '1D':
             size = self.input_size
             df = self.material.make_ohl_cv(start_time=timezone.now() - timezone.timedelta(days=size), time_step='1D')
+        net = load_model(self.model_dir)
+        I_scale = joblib.load(self.I_scale)
+        O_scale = joblib.load(self.O_scale)
+
+        ind = df.index[df.DateTime == self.last_calc]
+        Close = df.columns.get_loc('Close')
+
+        input = df.iloc[ind - self.input_size + 1: ind + 1, Close]
+        scaled_input = I_scale.transform(input)
+
+        pred = net.predict(scaled_input)
+        scaled_pred = O_scale.inverse_transform(pred)
+
+        return scaled_pred
+
 
 
 class Signal(models.Model):
