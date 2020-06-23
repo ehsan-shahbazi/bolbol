@@ -84,7 +84,9 @@ class Material(models.Model):
         plt.show()
     """
 
+
 class Predictor(models.Model):
+
     material = models.ForeignKey(Material, on_delete=models.CASCADE)
     model_dir = models.CharField(name='model_dir', default='polls/trained/?.h5', max_length=100)
     I_scale = models.CharField(name='Input scale model', default='polls/trained/I_scaler.gz', max_length=100)
@@ -107,6 +109,7 @@ class Predictor(models.Model):
         elif self.time_frame == '1D':
             size = self.input_size
             df = self.material.make_ohl_cv(start_time=timezone.now() - timezone.timedelta(days=size), time_step='1D')
+        print(df)
         net = load_model(self.model_dir)
         I_scale = joblib.load(self.I_scale)
         O_scale = joblib.load(self.O_scale)
