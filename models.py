@@ -23,6 +23,7 @@ class User(models.Model):
 
 
 class Material(models.Model):
+    print('this is mahsa')
     name = models.CharField(name='name', max_length=100, default='')
     persian_name = models.CharField(name='persian_name', max_length=100, default='')
     price = models.FloatField(name="price")
