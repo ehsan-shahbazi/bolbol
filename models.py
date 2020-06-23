@@ -12,7 +12,6 @@ from requests.exceptions import ConnectionError, Timeout, TooManyRedirects
 
 
 class User(models.Model):
-    print('hello ehsan this is me!')
     name = models.CharField(max_length=100, name='name')
     account = models.IntegerField(default=0, name='account')
     speed = models.IntegerField(default=1, name='speed')
@@ -22,10 +21,6 @@ class User(models.Model):
     def __str__(self):
         return self.name
 
-<<<<<<< HEAD
-print('hi فاثقث')
-=======
->>>>>>> 1
 
 class Material(models.Model):
     name = models.CharField(name='name', max_length=100, default='')
