@@ -9,7 +9,7 @@ from tensorflow.keras.models import load_model
 import joblib
 import numpy as np
 # Create your models here.
-
+print('this is ehsan')
 
 class User(models.Model):
     name = models.CharField(max_length=100, name='name')
@@ -23,6 +23,7 @@ class User(models.Model):
 
 
 class Material(models.Model):
+    print('this is ehsan too')
     name = models.CharField(name='name', max_length=100, default='')
     persian_name = models.CharField(name='persian_name', max_length=100, default='')
     price = models.FloatField(name="price")
@@ -124,24 +125,16 @@ class Predictor(models.Model):
             df = self.material.make_ohl_cv(start_time=timezone.now() - timezone.timedelta(days=size), time_step='1D')
 
         df = pd.to_numeric(df['Close'], downcast='float')
-        print(type(df), df)
         net = load_model(self.model_dir)
         i_scale = joblib.load(self.i_scale)
         o_scale = joblib.load(self.o_scale)
-        # THIS IS WRONG , CHANGE IT LATER FOR MULTI VARIABLE NET
         arr = self.derivate(df).values.reshape(-1, 1)
-        print('Hell1:', arr, arr.shape)
         scaled_input = i_scale.transform(arr)
-        print('Hell2: ', scaled_input, scaled_input.shape)
         the_input = np.reshape(scaled_input, (arr.shape[0], arr.shape[1], -1))
-
-        print(the_input.shape)
-
-        prediction = net.predict(scaled_input)
+        prediction = net.predict(the_input)
         scaled_prediction = o_scale.inverse_transform(prediction)
 
         return scaled_prediction
-
 
 
 class Signal(models.Model):
