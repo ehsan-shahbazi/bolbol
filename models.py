@@ -7,6 +7,7 @@ from requests import Session
 from requests.exceptions import ConnectionError, Timeout, TooManyRedirects
 from tensorflow.keras.models import load_model
 import joblib
+import numpy as np
 # Create your models here.
 
 
@@ -61,7 +62,7 @@ class Material(models.Model):
         df.ffill(axis=0, inplace=True)
         df_new = df.rename(columns={0: 'Volume', 'open': 'Open', 'close': 'Close', 'high': 'High', 'low': 'Low'})
         df_new['DateTime'] = df.index
-        df = df_new.set_index(pd.Index([i + 1 for i in range(len(df))]))
+        df = df_new.set_index(pd.Index([i for i in range(len(df))]))
         df = df[['DateTime', 'Open', 'High', 'Low', 'Close', 'Volume']]
         df["DateTime"] = df["DateTime"].dt.strftime("%Y-%m-%d %H:%M:%S")
         return df
@@ -97,6 +98,18 @@ class Predictor(models.Model):
     type = models.CharField(name='type', default='RNN', max_length=20)
     unit = models.CharField(name='unit', default='dollar', max_length=20)
 
+    @staticmethod
+    def derivate(df):
+        ind = df.index[0:-1]
+        t = df.diff().iloc[1:]
+        t.index = ind
+
+        tt = df.iloc[0:-1]
+
+        ttt = t.div(tt) * 100
+        print('what the hell 4:', ttt)
+        return ttt
+
     def predict(self):
         """
         Inter your code
@@ -109,16 +122,20 @@ class Predictor(models.Model):
         elif self.time_frame == '1D':
             size = self.input_size
             df = self.material.make_ohl_cv(start_time=timezone.now() - timezone.timedelta(days=size), time_step='1D')
-        print(df)
+
+        df = pd.to_numeric(df['Close'], downcast='float')
+        print(type(df), df)
         net = load_model(self.model_dir)
         i_scale = joblib.load(self.i_scale)
         o_scale = joblib.load(self.o_scale)
+        # THIS IS WRONG , CHANGE IT LATER FOR MULTI VARIABLE NET
+        arr = self.derivate(df).values.reshape(-1, 1)
+        print('Hell1:', arr, arr.shape)
+        scaled_input = i_scale.transform(arr)
+        print('Hell2: ', scaled_input, scaled_input.shape)
+        the_input = np.reshape(scaled_input, (arr.shape[0], arr.shape[1], -1))
 
-        ind = df.index[df.DateTime == self.last_calc]
-        close = df.columns.get_loc('Close')
-
-        the_input = df.iloc[ind - self.input_size + 1: ind + 1, close]
-        scaled_input = i_scale.transform(the_input)
+        print(the_input.shape)
 
         prediction = net.predict(scaled_input)
         scaled_prediction = o_scale.inverse_transform(prediction)
