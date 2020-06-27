@@ -9,7 +9,7 @@ from tensorflow.keras.models import load_model
 import joblib
 import numpy as np
 # Create your models here.
-print('this is ehsan')
+
 
 class User(models.Model):
     name = models.CharField(max_length=100, name='name')
@@ -23,7 +23,6 @@ class User(models.Model):
 
 
 class Material(models.Model):
-    print('this is ehsan too')
     name = models.CharField(name='name', max_length=100, default='')
     persian_name = models.CharField(name='persian_name', max_length=100, default='')
     price = models.FloatField(name="price")
@@ -88,7 +87,6 @@ class Material(models.Model):
 
 
 class Predictor(models.Model):
-
     material = models.ForeignKey(Material, on_delete=models.CASCADE)
     model_dir = models.CharField(name='model_dir', default='polls/trained/?.h5', max_length=100)
     i_scale = models.CharField(name='i_scale', default='polls/trained/I_scaler.gz', max_length=100)
@@ -98,6 +96,8 @@ class Predictor(models.Model):
     input_size = models.IntegerField(name='input_size', default=24)
     type = models.CharField(name='type', default='RNN', max_length=20)
     unit = models.CharField(name='unit', default='dollar', max_length=20)
+    upper = models.FloatField(name='upper', default=0)
+    lower = models.FloatField(name='lower', default=0)
 
     @staticmethod
     def derivate(df):
@@ -133,7 +133,6 @@ class Predictor(models.Model):
         the_input = np.reshape(scaled_input, (arr.shape[0], arr.shape[1], -1))
         prediction = net.predict(the_input)
         scaled_prediction = o_scale.inverse_transform(prediction)
-
         return scaled_prediction
 
 
@@ -153,6 +152,96 @@ class Signal(models.Model):
 
     def __str__(self):
         return self.material.name + '   ---->   ' + str(self.date_time) + '   --->   ' + str(self.price)
+
+
+class Trader(models.Model):
+    predictor = models.ForeignKey(Predictor, on_delete=models.CASCADE)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, null=True, related_name='user')
+    type = models.CharField(name='type', max_length=100)
+    start_asset = models.FloatField(name='start_asset', default=0)  # it should be in dollar
+    simulated_asset = models.FloatField(name='simulated_asset', default=0)
+    real_mat_asset = models.FloatField(name='real_mat_asset', default=0)
+    real_budget = models.FloatField(name='real_budget', default=0)
+    start_date = models.DateTimeField(name='start_date', default=timezone.now)
+    active = models.BooleanField(name='active', default=False)
+    asset_chart_file = models.CharField(name='asset_chart_file', default='polls/chart/?.txt', max_length=100)
+
+    def calculate(self):
+        self.asset_chart_file = 'polls/chart/' + str(self.user.name) + '.txt'
+        self.save()
+        activities = self.activity_set.all()
+        self.simulated_asset = activities[-1].price * activities[-1].mat_amount + activities[-1].budget
+        with open(str(self.asset_chart_file), 'w') as file:
+            file.flush()
+            real_budget = self.start_asset
+            real_mat_asset = 0
+            simulated_asset = 0
+            file.write(str(self.start_date) + ', ' + str(self.real_budget) + ', ' + str(True) + '\n')
+            for activity in activities:
+                file.write(str(activity.date_time) + ', ' + str(activity.price * activity.mat_amount + activity.budget)
+                           + ', ' + str(activity.real) + '\n')
+                simulated_asset = activity.price * activity.mat_amount + activity.budget
+                if activity.real:
+                    if activity.action == 'buy':
+                        if real_budget != 0:
+                            real_mat_asset = (real_budget / activity.price) * (1 - self.predictor.material.trading_fee)
+                            real_budget = 0
+                    elif activity.action == 'sell':
+                        if real_mat_asset != 0:
+                            real_budget = (real_mat_asset * activity.price) * (1 - self.predictor.material.trading_fee)
+                            real_mat_asset = 0
+                    file.write(str(activity.date_time) + ', ' +
+                               str(activity.price * real_mat_asset + real_budget) +
+                               ', ' + str(activity.real) + '\n')
+            self.simulated_asset = simulated_asset
+            self.real_mat_asset = real_mat_asset
+            self.real_budget = real_budget
+
+    def __str__(self):
+        return str(self.predictor.material.name) + '---' + str(self.predictor.time_frame) + '---' + str(self.user.name)
+
+    def trade(self):
+        prediction = self.predictor.predict()
+        if prediction > self.predictor.upper:
+            self.buy()
+        if prediction < self.predictor.lower:
+            self.sell()
+
+    def buy(self):
+        if self.active:
+            if self.type == '1':
+                # todo: fill buy it with api
+                return True
+        mat = self.predictor.material
+        self.mat_asset = self.mat_asset + ((self.budget / mat.price) * (1 - mat.trading_fee))
+        self.budget = 0
+        self.save()
+        record = Activity(trader=self, action='buy', date_time=timezone.now(), real=self.active, price=mat.price,
+                          budget=self.budget, mat_amount=self.mat_asset)
+        record.save()
+
+    def sell(self):
+        if self.active:
+            if self.type == '1':
+                # todo: fill sell it with api
+                return True
+        mat = self.predictor.material
+        self.budget = self.budget + ((self.mat_asset * mat.price) * (1 - mat.trading_fee))
+        self.mat_asset = 0
+        self.save()
+        record = Activity(trader=self, action='sell', date_time=timezone.now(), real=self.active, price=mat.price,
+                          budget=self.budget, mat_amount=self.mat_asset)
+        record.save()
+
+
+class Activity(models.Model):
+    trader = models.ForeignKey(Trader, on_delete=models.CASCADE)
+    action = models.CharField(name='action', max_length=3, default='buy')  # it should be 'buy' or 'sell'
+    date_time = models.DateTimeField(name='date_time', default=timezone.now)
+    real = models.BooleanField(name='real', default=False)
+    price = models.FloatField(name='price', default=0)
+    budget = models.FloatField(name='budget', default=0)
+    mat_amount = models.FloatField(name='mat_amount', default=0)
 
 
 class Paired(models.Model):
