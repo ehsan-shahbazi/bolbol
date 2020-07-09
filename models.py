@@ -8,6 +8,9 @@ from requests.exceptions import ConnectionError, Timeout, TooManyRedirects
 from tensorflow.keras.models import load_model
 import joblib
 import numpy as np
+from binance.client import Client
+from binance.enums import *
+import ta
 # Create your models here.
 
 
@@ -17,9 +20,152 @@ class User(models.Model):
     speed = models.IntegerField(default=1, name='speed')
     phone = models.CharField(default='09125459232', name='phone', max_length=11)
     last_mail_date = models.DateTimeField(name='last_mail_date')
+    api_key = models.CharField(max_length=100, name='api_key',
+                               default='api_key')
+    secret_key = models.CharField(max_length=100, name='secret_key',
+                                  default='secret_key')
 
     def __str__(self):
         return self.name
+
+
+class Finance(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    symbol = models.CharField(name='symbol', default='BTCUSDT', max_length=20)
+    # todo: check the order responses to figure out the transactions are done perfectly
+
+    def get_time(self):
+        client = Client(self.user.api_key, self.user.secret_key)
+        timestamp = client.get_server_time()
+        return int(timestamp['serverTime']) / 1000
+
+    def buy(self, percent=100):
+        """
+
+        :param percent: how much of your budget do you want to buy? 100 mean all of that
+        :return:
+        """
+        client = Client(self.user.api_key, self.user.secret_key)
+
+        order = client.order_market_buy(
+            symbol=self.symbol,
+            quantity=percent)
+        return
+
+    def sell(self, percent=100):
+        """
+
+        :param percent: how much of your asset do you want to sell? 100 mean all of that
+        :return:
+        """
+        client = Client(self.user.api_key, self.user.secret_key)
+
+        order = client.order_market_sell(
+            symbol=self.symbol,
+            quantity=percent)
+
+        return
+
+    def get_price(self):
+        client = Client(self.user.api_key, self.user.secret_key)
+        orders = client.get_all_tickers()
+        for order in orders:
+            if order['symbol'] == self.symbol:
+                return float(order['price'])
+        return False
+
+    def buy_limit(self, limit, percent=100):
+        """
+        :param limit: in witch cost do you want to buy
+        :param percent: how much of your budget do you want to buy? 100 mean all of that
+        :return:
+        """
+        client = Client(self.user.api_key, self.user.secret_key)
+
+        order = client.order_limit_buy(
+            symbol=self.symbol,
+            quantity=percent,
+            price=str(limit))
+
+    def sell_limit(self, limit, percent=100):
+        """
+        :param limit: in witch cost do you want to sell
+        :param percent: how much of your asset do you want to sell? 100 mean all of that
+        :return:
+        """
+        client = Client(self.user.api_key, self.user.secret_key)
+
+        order = client.order_limit_sell(
+            symbol=self.symbol,
+            quantity=percent,
+            price=str(limit))
+
+    def buy_stop(self, stop, percent=100):
+        """
+
+        :param stop: the price of stop
+        :param percent: how much of the budget? 100 means all of it
+        :return:
+        """
+        client = Client(self.user.api_key, self.user.secret_key)
+
+        order = client.create_oco_order(
+            symbol=self.symbol,
+            side=SIDE_BUY,
+            stopLimitTimeInForce=TIME_IN_FORCE_GTC,
+            quantity=percent,
+            stopPrice=str(stop),
+            price=str(stop))
+        return
+
+    def sell_stop(self, stop, percent=100):
+        """
+
+        :param stop: the price of stop
+        :param percent: how much of the asset? 100 means all of it
+        :return:
+        """
+        client = Client(self.user.api_key, self.user.secret_key)
+
+        order = client.create_oco_order(
+            symbol=self.symbol,
+            side=SIDE_SELL,
+            stopLimitTimeInForce=TIME_IN_FORCE_GTC,
+            quantity=percent,
+            stopPrice=str(stop),
+            price=str(stop))
+        return
+
+    def cancel_stop(self):
+
+        client = Client(self.user.api_key, self.user.secret_key)
+
+        orders = client.get_open_orders(symbol=self.symbol)
+        for order in orders:
+            if order['symbol'] == self.symbol:
+                the_answer = client.cancel_order(symbol=self.symbol, orderId=order['orderId'])
+        return
+
+    def give_ohlcv(self, interval='1m', size=12):
+        """
+        :param interval: it can be 1m for 1min and 1h for one hour if you want else, then you should define it.
+        :param size: the size of the input size of predictor plus 1
+        :return: a data_frame
+        """
+        client = Client(self.user.api_key, self.user.secret_key)
+        if interval == '1h':
+            my_interval = Client.KLINE_INTERVAL_1HOUR
+            limit = (size + 1)
+        elif interval == '1m':
+            my_interval = Client.KLINE_INTERVAL_1MINUTE
+            limit = (size + 1) * 60
+        else:
+            return False
+        candles = client.get_klines(symbol=self.symbol, interval=my_interval, limit=limit)
+        df = pd.DataFrame(candles, columns=["Open time", "Open", "High", "Low", "Close", "Volume", "Close time",
+                                            "Quote asset volume", "Number of trades", "Taker buy base asset volume",
+                                            "Taker buy quote asset volume", "Ignore"])
+        return df
 
 
 class Material(models.Model):
@@ -67,37 +213,29 @@ class Material(models.Model):
         df["DateTime"] = df["DateTime"].dt.strftime("%Y-%m-%d %H:%M:%S")
         return df
 
-    """
-    def give_support_resistance(self):
-        df = self.make_ohl_cv(start_time=timezone.now()-timezone.timedelta(hours=8), time_step='1Min')
-        print(df)
-        # print(pd.Series(df['Close']))
-        # this will serve as an example for security or index closing prices, or low and high prices
-        # mins, maxs = trendln.calc_support_resistance(pd.Series(df['Close']))
-        minimaIdxs, pmin, mintrend, minwindows = trendln.calc_support_resistance((pd.Series(df['Low']), None))
-        print(minimaIdxs, pmin, mintrend, minwindows)
-        minimaIdxs, pmin, mintrend, minwindows = trendln.calc_support_resistance((pd.Series(df['High']), None))
-        print(minimaIdxs, pmin, mintrend, minwindows)
-        print('hi')
-        fig = trendln.plot_support_resistance((pd.Series(df['Close']), None))  #
-        # requires matplotlib - pip install matplotlib
-        plt.savefig('suppres.svg', format='svg')
-        plt.show()
-    """
-
 
 class Predictor(models.Model):
     material = models.ForeignKey(Material, on_delete=models.CASCADE)
     model_dir = models.CharField(name='model_dir', default='polls/trained/?.h5', max_length=100)
     i_scale = models.CharField(name='i_scale', default='polls/trained/I_scaler.gz', max_length=100)
     o_scale = models.CharField(name='o_scale', default='polls/trained/O_scaler.gz', max_length=100)
-    time_frame = models.CharField(name='time_frame', default='1H', max_length=20)
+    time_frame = models.CharField(name='time_frame', default='1h', max_length=20)
     last_calc = models.DateTimeField(name='last_calc', default=timezone.now)
     input_size = models.IntegerField(name='input_size', default=24)
     type = models.CharField(name='type', default='RNN', max_length=20)
     unit = models.CharField(name='unit', default='dollar', max_length=20)
     upper = models.FloatField(name='upper', default=0)
     lower = models.FloatField(name='lower', default=0)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.type == 'KNN':
+            self.net = load_model(self.model_dir)
+            self.i_scale = joblib.load(self.i_scale)
+            self.o_scale = joblib.load(self.o_scale)
+        elif self.type == 'DT':
+            self.model = joblib.load(self.model_dir)
+
 
     @staticmethod
     def derivate(df):
@@ -111,29 +249,59 @@ class Predictor(models.Model):
         print('what the hell 4:', ttt)
         return ttt
 
-    def predict(self):
+    @staticmethod
+    def make_inputs(df, test=True):
         """
-        Inter your code
+        :param df: after doing ta.add_all... we give the result df to the input
+        :param test: It should be True while predicting
         :return:
         """
-        df = ''
-        if self.time_frame == '1H':
-            size = self.input_size
-            df = self.material.make_ohl_cv(start_time=timezone.now() - timezone.timedelta(hours=size), time_step='1H')
-        elif self.time_frame == '1D':
-            size = self.input_size
-            df = self.material.make_ohl_cv(start_time=timezone.now() - timezone.timedelta(days=size), time_step='1D')
+        df.drop(['Open', 'Close', 'High', 'Low'], axis=1)
+        inputs = []
+        for index, data in df.iterrows():
+            inputs.append(list(data))
+        if test:
+            return inputs
+        else:
+            return inputs[0:-1]
 
-        df = pd.to_numeric(df['Close'], downcast='float')
-        net = load_model(self.model_dir)
-        i_scale = joblib.load(self.i_scale)
-        o_scale = joblib.load(self.o_scale)
-        arr = self.derivate(df).values.reshape(-1, 1)
-        scaled_input = i_scale.transform(arr)
-        the_input = np.reshape(scaled_input, (arr.shape[0], arr.shape[1], -1))
-        prediction = net.predict(the_input)
-        scaled_prediction = o_scale.inverse_transform(prediction)
-        return scaled_prediction
+    def make_ohlcv(self, df):
+        out = df[['Open', 'High', 'Low', 'Close', 'Volume']]
+        out['Open'] = pd.to_numeric(out['Open'])
+        out['High'] = pd.to_numeric(out['High'])
+        out['Low'] = pd.to_numeric(out['Low'])
+        out['Close'] = pd.to_numeric(out['Close'])
+        out['Volume'] = pd.to_numeric(out['Volume'])
+        out['Volume'] = out['Volume'] * out['Close']
+        print(out.head())
+        return out
+
+    def predict(self, df=''):
+        """
+        Inter your code
+        :param: df: the df should be appropriated for prediction in size and time framing
+        :return:
+        """
+        if self.type == 'RNN':
+            # todo: check that df exists?
+            df = pd.to_numeric(df['Close']['mean'], downcast='float')
+            arr = self.derivate(df).values.reshape(-1, 1)
+            scaled_input = self.i_scale.transform(arr)
+            the_input = np.reshape(scaled_input, (arr.shape[1], arr.shape[0], -1))
+            prediction = self.net.predict(the_input)
+            scaled_prediction = self.o_scale.inverse_transform(prediction)
+            return scaled_prediction
+        elif self.type == 'DT':
+            df = self.make_ohlcv(df)
+            df = ta.add_all_ta_features(df, open="Open", high="High", low="Low", close="Close",
+                                        volume="Volume", fillna=True)
+            the_input = self.make_inputs(df, test=True)
+            predictions = self.model.predict(the_input)
+            print('prediction is:', list(predictions[-1]))
+            if list(predictions[-1]) in [[1, 0, 0, 0, 0, 0], [0, 1, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0]]:
+                return 1
+            elif list(predictions[-1]) not in [[1, 0, 0, 0, 0, 0], [0, 1, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0]]:
+                return -1
 
 
 class Signal(models.Model):
@@ -200,37 +368,54 @@ class Trader(models.Model):
     def __str__(self):
         return str(self.predictor.material.name) + '---' + str(self.predictor.time_frame) + '---' + str(self.user.name)
 
-    def trade(self):
-        prediction = self.predictor.predict()
+    def trade(self, close, df=''):
+        prediction = self.predictor.predict(df)
+        print('prediction is:', prediction)
         if prediction > self.predictor.upper:
-            self.buy()
+            self.buy(close)
+            print('BUY')
         if prediction < self.predictor.lower:
-            self.sell()
+            self.sell(close)
+            print('SELL')
 
-    def buy(self):
+    def buy(self, close):
+        speaker = self.user.finance_set.all()[0]
         if self.active:
             if self.type == '1':
-                # todo: fill buy it with api
-                return True
+                speaker.buy()
+        price = speaker.get_price()
+        if price:
+            price = price
+        else:
+            price = close
         mat = self.predictor.material
-        self.mat_asset = self.mat_asset + ((self.budget / mat.price) * (1 - mat.trading_fee))
-        self.budget = 0
+        mat.price = price
+        mat.save()
+        self.real_mat_asset = self.real_mat_asset + ((self.real_budget / close) * (1 - mat.trading_fee))
+        self.real_budget = 0
         self.save()
-        record = Activity(trader=self, action='buy', date_time=timezone.now(), real=self.active, price=mat.price,
-                          budget=self.budget, mat_amount=self.mat_asset)
+        record = Activity(trader=self, action='buy', date_time=timezone.now(), real=self.active, price=close,
+                          budget=self.real_budget, mat_amount=self.real_mat_asset)
         record.save()
 
-    def sell(self):
+    def sell(self, close):
+        speaker = self.user.finance_set.all()[0]
         if self.active:
             if self.type == '1':
-                # todo: fill sell it with api
-                return True
+                speaker.sell()
+        price = speaker.get_price()
+        if price:
+            price = price
+        else:
+            price = close
         mat = self.predictor.material
-        self.budget = self.budget + ((self.mat_asset * mat.price) * (1 - mat.trading_fee))
-        self.mat_asset = 0
+        mat.price = price
+        mat.save()
+        self.real_mat_asset = self.real_mat_asset + ((self.real_budget / close) * (1 - mat.trading_fee))
+        self.real_budget = 0
         self.save()
-        record = Activity(trader=self, action='sell', date_time=timezone.now(), real=self.active, price=mat.price,
-                          budget=self.budget, mat_amount=self.mat_asset)
+        record = Activity(trader=self, action='sell', date_time=timezone.now(), real=self.active, price=close,
+                          budget=self.real_budget, mat_amount=self.real_mat_asset)
         record.save()
 
 
@@ -242,6 +427,9 @@ class Activity(models.Model):
     price = models.FloatField(name='price', default=0)
     budget = models.FloatField(name='budget', default=0)
     mat_amount = models.FloatField(name='mat_amount', default=0)
+
+    def __str__(self):
+        return self.action + ' ' + str(self.trader.user.name) + str(self.date_time)
 
 
 class Paired(models.Model):
